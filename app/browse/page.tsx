@@ -1,9 +1,9 @@
 "use client"
 
 import Header from "@/app/components/header"
-import Footer from "@/components/footer"
-import ItemCard from "@/components/item-card"
-import FiltersSidebar from "@/components/filters-sidebar"
+import Footer from "@/app/components/footer"
+import ItemCard from "@/app/components/item-card"
+import FiltersSidebar from "@/app/components/filters-sidebar"
 import { LayoutGrid, List, ChevronDown } from "lucide-react"
 import { useState } from "react"
 
