@@ -1,9 +1,9 @@
 "use client"
 
-import Header from "@/components/header"
-import Footer from "@/components/footer"
-import RatingDisplay from "@/components/rating-display"
-import BorrowRequestModal from "@/components/borrow-request-modal"
+import Header from "@/app/components/header"
+import Footer from "@/app/components/footer"
+import RatingDisplay from "@/app/components/rating-display"
+import BorrowRequestModal from "@/app/components/borrow-request-modal"
 import { MapPin, Calendar, Shield, Heart, Share2, ChevronLeft, ChevronRight, Clock } from "lucide-react"
 import { useState } from "react"
 import Link from "next/link"
