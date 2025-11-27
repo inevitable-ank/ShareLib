@@ -132,3 +132,16 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Increase max-width to use more screen space and reduce side margins */
+@layer utilities {
+  [class*="max-w-7xl"] {
+    max-width: min(95%, 1400px) !important;
+  }
+  [class*="max-w-6xl"] {
+    max-width: min(95%, 1200px) !important;
+  }
+  [class*="max-w-4xl"] {
+    max-width: min(95%, 900px) !important;
+  }
+}
