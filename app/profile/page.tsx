@@ -2,7 +2,7 @@
 
 import Header from "@/app/components/header"
 import Footer from "@/app/components/footer"
-import RatingDisplay from "@/app/components/rating-display "
+import RatingDisplay from "@/app/components/rating-display"
 import { Mail, MapPin, Calendar, Edit, LogOut, Award, TrendingUp } from "lucide-react"
 import { useState } from "react"
 
