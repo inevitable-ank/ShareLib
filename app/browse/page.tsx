@@ -1,6 +1,6 @@
 "use client"
 
-import Header from "@/components/header"
+import Header from "@/app/components/header"
 import Footer from "@/components/footer"
 import ItemCard from "@/components/item-card"
 import FiltersSidebar from "@/components/filters-sidebar"
