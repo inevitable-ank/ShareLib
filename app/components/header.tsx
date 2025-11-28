@@ -3,9 +3,11 @@
 import Link from "next/link"
 import { Bell, User, Search, Menu, X } from "lucide-react"
 import { useState } from "react"
+import { useAuth } from "@/app/lib/queries"
 
 export default function Header() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const isAuthenticated = useAuth()
 
   return (
     <header className="sticky top-0 z-50 bg-background border-b border-border">
@@ -46,13 +48,17 @@ export default function Header() {
 
           {/* Right Actions */}
           <div className="flex items-center gap-3">
-            <Link href="/notifications" className="relative p-2 rounded-lg hover:bg-muted transition-smooth">
-              <Bell className="w-5 h-5" />
-              <span className="absolute top-1 right-1 w-2 h-2 bg-accent rounded-full"></span>
-            </Link>
-            <Link href="/profile" className="p-2 rounded-lg hover:bg-muted transition-smooth">
-              <User className="w-5 h-5" />
-            </Link>
+            {isAuthenticated && (
+              <>
+                <Link href="/notifications" className="relative p-2 rounded-lg hover:bg-muted transition-smooth">
+                  <Bell className="w-5 h-5" />
+                  <span className="absolute top-1 right-1 w-2 h-2 bg-accent rounded-full"></span>
+                </Link>
+                <Link href="/profile" className="p-2 rounded-lg hover:bg-muted transition-smooth">
+                  <User className="w-5 h-5" />
+                </Link>
+              </>
+            )}
             <button
               className="md:hidden p-2 rounded-lg hover:bg-muted transition-smooth"
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}

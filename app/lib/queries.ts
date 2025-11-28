@@ -1,6 +1,7 @@
 // TanStack Query hooks for API calls
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { authAPI, usersAPI, itemsAPI, borrowRequestsAPI, borrowRecordsAPI, ratingsAPI, categoriesAPI } from "./api"
+import { useState, useEffect } from "react"
+import { authAPI, usersAPI, itemsAPI, borrowRequestsAPI, borrowRecordsAPI, ratingsAPI, categoriesAPI, getAccessToken } from "./api"
 
 // Query Keys
 export const queryKeys = {
@@ -36,6 +37,44 @@ export const queryKeys = {
 }
 
 // Auth Hooks
+// Hook to check if user is authenticated
+export const useAuth = () => {
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false)
+
+  useEffect(() => {
+    // Check authentication status on mount and when storage changes
+    const checkAuth = () => {
+      const token = getAccessToken()
+      setIsAuthenticated(!!token)
+    }
+
+    // Initial check
+    checkAuth()
+
+    // Listen for storage changes (e.g., when user logs in/out in another tab)
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'access_token') {
+        checkAuth()
+      }
+    }
+
+    // Listen for custom storage events (for same-tab login/logout)
+    const handleCustomStorageChange = () => {
+      checkAuth()
+    }
+
+    window.addEventListener('storage', handleStorageChange)
+    window.addEventListener('auth-change', handleCustomStorageChange)
+
+    return () => {
+      window.removeEventListener('storage', handleStorageChange)
+      window.removeEventListener('auth-change', handleCustomStorageChange)
+    }
+  }, [])
+
+  return isAuthenticated
+}
+
 export const useLogin = () => {
   const queryClient = useQueryClient()
   
@@ -44,6 +83,10 @@ export const useLogin = () => {
       authAPI.loginWithEmail(email, password),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.auth.profile })
+      // Dispatch custom event to update auth state
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new Event('auth-change'))
+      }
     },
   })
 }

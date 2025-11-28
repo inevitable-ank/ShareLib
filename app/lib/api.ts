@@ -22,6 +22,8 @@ export const clearTokens = (): void => {
   if (typeof window === 'undefined') return
   localStorage.removeItem('access_token')
   localStorage.removeItem('refresh_token')
+  // Dispatch custom event to update auth state in components
+  window.dispatchEvent(new Event('auth-change'))
 }
 
 // API request helper

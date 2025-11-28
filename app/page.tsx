@@ -5,6 +5,7 @@ import Footer from "@/app/components/footer"
 import ItemCard from "@/app/components/item-card"
 import { ArrowRight, Users, Leaf, Heart, TrendingUp } from "lucide-react"
 import Link from "next/link"
+import { useAuth } from "@/app/lib/queries"
 
 const featuredItems = [
   {
@@ -54,6 +55,8 @@ const featuredItems = [
 ]
 
 export default function HomePage() {
+  const isAuthenticated = useAuth()
+
   return (
     <>
       <Header />
@@ -83,12 +86,14 @@ export default function HomePage() {
                     Start Browsing
                     <ArrowRight className="w-5 h-5" />
                   </Link>
-                  <Link
-                    href="/register"
-                    className="px-8 py-4 border-2 border-primary text-primary font-bold rounded-lg hover:bg-primary/10 transition-smooth flex items-center justify-center gap-2"
-                  >
-                    Create Account
-                  </Link>
+                  {!isAuthenticated && (
+                    <Link
+                      href="/register"
+                      className="px-8 py-4 border-2 border-primary text-primary font-bold rounded-lg hover:bg-primary/10 transition-smooth flex items-center justify-center gap-2"
+                    >
+                      Create Account
+                    </Link>
+                  )}
                 </div>
               </div>
 
@@ -183,13 +188,15 @@ export default function HomePage() {
             <p className="text-xl text-muted-foreground mb-8">
               Become part of a community that shares, trusts, and grows together
             </p>
-            <Link
-              href="/register"
-              className="inline-block px-8 py-4 bg-gradient-to-r from-primary to-accent text-primary-foreground font-bold rounded-lg hover-lift flex items-center gap-2"
-            >
-              Get Started Today
-              <ArrowRight className="w-5 h-5" />
-            </Link>
+            {!isAuthenticated && (
+              <Link
+                href="/register"
+                className="inline-block px-8 py-4 bg-gradient-to-r from-primary to-accent text-primary-foreground font-bold rounded-lg hover-lift flex items-center gap-2"
+              >
+                Get Started Today
+                <ArrowRight className="w-5 h-5" />
+              </Link>
+            )}
           </div>
         </section>
       </main>
