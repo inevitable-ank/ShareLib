@@ -3,60 +3,220 @@
 import Header from "@/app/components/header"
 import Footer from "@/app/components/footer"
 import ItemCard from "@/app/components/item-card"
-import { Plus, Edit, Trash2, Eye } from "lucide-react"
-import { useState } from "react"
+import { Plus, Edit, Trash2, Eye, Loader2 } from "lucide-react"
+import { useState, useMemo, useEffect } from "react"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
+import { useProfile, useItems, useBorrowRequests, useBorrowRecords } from "@/app/lib/queries"
+
+interface TransformedItem {
+  id: string
+  title: string
+  category: string
+  image: string
+  condition: "New" | "Good" | "Used" | "Damaged"
+  ownerName: string
+  ownerRating: number
+  location: string
+  distance?: string
+  requestCount: number
+  borrowCount: number
+  isAvailable: boolean
+  isBorrowed: boolean
+}
 
 export default function MyItemsPage() {
-  const [items, setItems] = useState([
-    {
-      id: "1",
-      title: "Drill Machine - Professional Grade",
-      category: "Tools",
-      image: "/drill-machine.png",
-      condition: "Good" as const,
-      ownerName: "You",
-      ownerRating: 4.8,
-      location: "Downtown",
-      distance: "Your location",
-      requestCount: 3,
-      borrowCount: 5,
-    },
-    {
-      id: "2",
-      title: "Pressure Washer 3000 PSI",
-      category: "Tools",
-      image: "/pressure-washer.png",
-      condition: "New" as const,
-      ownerName: "You",
-      ownerRating: 4.8,
-      location: "Downtown",
-      distance: "Your location",
-      requestCount: 1,
-      borrowCount: 2,
-    },
-    {
-      id: "3",
-      title: "Mountain Bike XC Edition",
-      category: "Sports Equipment",
-      image: "/mountain-bike-trail.png",
-      condition: "Good" as const,
-      ownerName: "You",
-      ownerRating: 4.8,
-      location: "Downtown",
-      distance: "Your location",
-      requestCount: 4,
-      borrowCount: 3,
-    },
-  ])
-
+  const router = useRouter()
   const [activeTab, setActiveTab] = useState<"all" | "available" | "borrowed">("all")
 
-  const filteredItems = items.filter((item) => {
-    if (activeTab === "available") return true
-    if (activeTab === "borrowed") return false
-    return true
-  })
+  // Fetch user profile to get user ID
+  const { data: profile, isLoading: profileLoading, error: profileError } = useProfile()
+  
+  // Redirect to login if session expired
+  useEffect(() => {
+    if (profileError) {
+      const errorMessage = profileError instanceof Error ? profileError.message : String(profileError)
+      if (errorMessage.includes('Session expired') || errorMessage.includes('token') || errorMessage.includes('401')) {
+        const timer = setTimeout(() => {
+          router.push('/login')
+        }, 1500)
+        return () => clearTimeout(timer)
+      }
+    }
+  }, [profileError, router])
+
+  const profileId = profile && typeof profile === 'object' ? (profile as any).id : undefined
+
+  // Fetch items owned by the user
+  const { data: itemsData, isLoading: itemsLoading } = useItems(
+    profileId ? { owner: profileId } : undefined
+  )
+
+  // Fetch borrow requests to count pending requests per item
+  const { data: borrowRequestsData } = useBorrowRequests()
+
+  // Fetch borrow records to count borrows per item
+  const { data: borrowRecordsData } = useBorrowRecords(
+    profileId ? { owner: profileId } : undefined
+  )
+
+  // Transform API data to match ItemCard format
+  const items = useMemo<TransformedItem[]>(() => {
+    if (!itemsData) return []
+
+    // Handle paginated response or array
+    const itemsArray = Array.isArray((itemsData as any).results)
+      ? (itemsData as any).results
+      : Array.isArray(itemsData)
+      ? itemsData
+      : []
+
+    // Get borrow requests array
+    const requestsArray = borrowRequestsData
+      ? Array.isArray((borrowRequestsData as any).results)
+        ? (borrowRequestsData as any).results
+        : Array.isArray(borrowRequestsData)
+        ? borrowRequestsData
+        : []
+      : []
+
+    // Get borrow records array
+    const recordsArray = borrowRecordsData
+      ? Array.isArray((borrowRecordsData as any).results)
+        ? (borrowRecordsData as any).results
+        : Array.isArray(borrowRecordsData)
+        ? borrowRecordsData
+        : []
+      : []
+
+    return itemsArray.map((item: any) => {
+      // Get first image or placeholder
+      let image = "/placeholder.svg"
+      if (item.photos) {
+        if (Array.isArray(item.photos)) {
+          image = item.photos[0] || item.photos.find((p: any) => p.image)?.image || "/placeholder.svg"
+        } else if (typeof item.photos === 'string') {
+          image = item.photos
+        } else if (item.photos.image) {
+          image = item.photos.image
+        }
+      } else if (item.images && Array.isArray(item.images) && item.images.length > 0) {
+        image = item.images[0].image || item.images[0] || "/placeholder.svg"
+      }
+
+      // Get category name
+      const categoryName = item.category?.name || item.category || "Uncategorized"
+
+      // Normalize condition to match ItemCard type
+      const conditionMap: Record<string, "New" | "Good" | "Used" | "Damaged"> = {
+        new: "New",
+        good: "Good",
+        used: "Used",
+        damaged: "Damaged",
+      }
+      const condition = conditionMap[item.condition?.toLowerCase()] || "Good"
+
+      // Get owner name
+      const owner = item.owner || {}
+      const ownerName =
+        owner.first_name || owner.last_name
+          ? `${owner.first_name || ""} ${owner.last_name || ""}`.trim()
+          : owner.username || owner.full_name || "You"
+
+      // Get owner rating (prefer lender_rating, fallback to average)
+      const ownerRating = parseFloat(
+        owner.lender_rating || owner.rating || "0"
+      ) || 0
+
+      // Count pending requests for this item
+      // Handle both item as object (with id) and item as number (id only)
+      // Also verify that the request is for an item owned by the current user
+      const requestCount = requestsArray.filter((req: any) => {
+        const requestItemId = typeof req.item === 'object' ? req.item?.id : req.item
+        const itemOwnerId = typeof req.item === 'object' ? req.item?.owner?.id || req.item?.owner : null
+        const lenderId = req.lender?.id || req.lender_id
+        // Match item ID and ensure it's owned by current user (either via item.owner or lender field)
+        return requestItemId === item.id && 
+               req.status === "pending" &&
+               (itemOwnerId === profileId || lenderId === profileId || !itemOwnerId) // If owner not in response, assume it's correct
+      }).length
+
+      // Count completed borrows for this item
+      // Handle both request.item as object and as number
+      const borrowCount = recordsArray.filter((record: any) => {
+        const recordItemId = record.request?.item
+          ? typeof record.request.item === 'object'
+            ? record.request.item?.id
+            : record.request.item
+          : record.item?.id || record.item
+        return recordItemId === item.id &&
+          (record.status === "borrowed" || record.status === "returned")
+      }).length
+
+      // Check if item is currently borrowed
+      const isBorrowed = recordsArray.some((record: any) => {
+        const recordItemId = record.request?.item
+          ? typeof record.request.item === 'object'
+            ? record.request.item?.id
+            : record.request.item
+          : record.item?.id || record.item
+        return recordItemId === item.id && record.status === "borrowed"
+      })
+
+      return {
+        id: String(item.id),
+        title: item.title || "Untitled Item",
+        category: categoryName,
+        image: image,
+        condition: condition,
+        ownerName: ownerName,
+        ownerRating: ownerRating,
+        location: item.location || owner.location || "Location not specified",
+        distance: "Your location",
+        requestCount: requestCount,
+        borrowCount: borrowCount,
+        isAvailable: item.is_available !== false,
+        isBorrowed: isBorrowed,
+      }
+    })
+  }, [itemsData, borrowRequestsData, borrowRecordsData])
+
+  // Filter items based on active tab
+  const filteredItems = useMemo(() => {
+    return items.filter((item) => {
+      if (activeTab === "available") return item.isAvailable && !item.isBorrowed
+      if (activeTab === "borrowed") return item.isBorrowed
+      return true // "all" tab
+    })
+  }, [items, activeTab])
+
+  const isLoading = profileLoading || itemsLoading
+
+  // Calculate stats
+  const stats = useMemo(() => {
+    return {
+      totalItems: items.length,
+      pendingRequests: items.reduce((sum, item) => sum + item.requestCount, 0),
+      timesBorrowed: items.reduce((sum, item) => sum + item.borrowCount, 0),
+    }
+  }, [items])
+
+  // Loading state
+  if (isLoading) {
+    return (
+      <>
+        <Header />
+        <main className="min-h-screen bg-background">
+          <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+            <div className="flex items-center justify-center py-32">
+              <Loader2 className="w-8 h-8 animate-spin text-primary" />
+            </div>
+          </div>
+        </main>
+        <Footer />
+      </>
+    )
+  }
 
   return (
     <>
@@ -81,18 +241,18 @@ export default function MyItemsPage() {
           {/* Stats */}
           <div className="grid grid-cols-3 gap-4 mb-8">
             <div className="bg-card rounded-xl border border-border p-4 text-center">
-              <div className="text-3xl font-bold text-foreground">{items.length}</div>
+              <div className="text-3xl font-bold text-foreground">{stats.totalItems}</div>
               <p className="text-sm text-muted-foreground mt-1">Total Items</p>
             </div>
             <div className="bg-card rounded-xl border border-border p-4 text-center">
               <div className="text-3xl font-bold text-accent">
-                {items.reduce((sum, item) => sum + item.requestCount, 0)}
+                {stats.pendingRequests}
               </div>
               <p className="text-sm text-muted-foreground mt-1">Pending Requests</p>
             </div>
             <div className="bg-card rounded-xl border border-border p-4 text-center">
               <div className="text-3xl font-bold text-secondary">
-                {items.reduce((sum, item) => sum + item.borrowCount, 0)}
+                {stats.timesBorrowed}
               </div>
               <p className="text-sm text-muted-foreground mt-1">Times Borrowed</p>
             </div>
@@ -116,42 +276,45 @@ export default function MyItemsPage() {
           </div>
 
           {/* Items List */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-12">
-            {filteredItems.map((item) => (
-              <div key={item.id} className="group">
-                <div className="relative">
-                  <ItemCard {...item} />
-                  {/* Action Buttons */}
-                  <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-smooth rounded-xl flex items-center justify-center gap-3">
-                    <button className="p-3 bg-white rounded-lg text-foreground hover:bg-primary hover:text-primary-foreground transition-smooth flex items-center gap-2">
-                      <Eye className="w-5 h-5" />
-                    </button>
-                    <button className="p-3 bg-white rounded-lg text-foreground hover:bg-primary hover:text-primary-foreground transition-smooth flex items-center gap-2">
-                      <Edit className="w-5 h-5" />
-                    </button>
-                    <button className="p-3 bg-white rounded-lg text-foreground hover:bg-destructive hover:text-destructive-foreground transition-smooth flex items-center gap-2">
-                      <Trash2 className="w-5 h-5" />
-                    </button>
+          {filteredItems.length > 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-12">
+              {filteredItems.map((item) => (
+                <div key={item.id} className="group">
+                  <div className="relative">
+                    <ItemCard {...item} />
+                    {/* Action Buttons */}
+                    <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-smooth rounded-xl flex items-center justify-center gap-3">
+                      <Link
+                        href={`/items/${item.id}`}
+                        className="p-3 bg-white rounded-lg text-foreground hover:bg-primary hover:text-primary-foreground transition-smooth flex items-center gap-2"
+                      >
+                        <Eye className="w-5 h-5" />
+                      </Link>
+                      <button className="p-3 bg-white rounded-lg text-foreground hover:bg-primary hover:text-primary-foreground transition-smooth flex items-center gap-2">
+                        <Edit className="w-5 h-5" />
+                      </button>
+                      <button className="p-3 bg-white rounded-lg text-foreground hover:bg-destructive hover:text-destructive-foreground transition-smooth flex items-center gap-2">
+                        <Trash2 className="w-5 h-5" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Item Stats */}
+                  <div className="mt-3 space-y-2">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-muted-foreground">Pending Requests</span>
+                      <span className="font-semibold text-accent">{item.requestCount}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-muted-foreground">Times Borrowed</span>
+                      <span className="font-semibold text-secondary">{item.borrowCount}</span>
+                    </div>
                   </div>
                 </div>
-
-                {/* Item Stats */}
-                <div className="mt-3 space-y-2">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">Pending Requests</span>
-                    <span className="font-semibold text-accent">{item.requestCount}</span>
-                  </div>
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">Times Borrowed</span>
-                    <span className="font-semibold text-secondary">{item.borrowCount}</span>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {/* Empty State */}
-          {filteredItems.length === 0 && (
+              ))}
+            </div>
+          ) : (
+            /* Empty State */
             <div className="text-center py-16">
               <div className="text-6xl mb-4">📦</div>
               <h3 className="text-2xl font-bold text-foreground mb-2">No items yet</h3>
