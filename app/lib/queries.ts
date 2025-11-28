@@ -1,6 +1,6 @@
 // TanStack Query hooks for API calls
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { authAPI, usersAPI, itemsAPI, borrowRequestsAPI, ratingsAPI, categoriesAPI } from "./api"
+import { authAPI, usersAPI, itemsAPI, borrowRequestsAPI, borrowRecordsAPI, ratingsAPI, categoriesAPI } from "./api"
 
 // Query Keys
 export const queryKeys = {
@@ -18,6 +18,13 @@ export const queryKeys = {
   borrowRequests: {
     all: ["borrowRequests"] as const,
     detail: (id: number | string) => ["borrowRequests", id] as const,
+  },
+  borrowRecords: {
+    all: (params?: Record<string, unknown>) => ["borrowRecords", params] as const,
+    detail: (id: number | string) => ["borrowRecords", id] as const,
+  },
+  userStats: {
+    all: ["userStats"] as const,
   },
   ratings: {
     all: ["ratings"] as const,
@@ -59,7 +66,8 @@ export const useProfile = () => {
   return useQuery({
     queryKey: queryKeys.auth.profile,
     queryFn: () => authAPI.getProfile(),
-    enabled: typeof window !== "undefined" && !!localStorage.getItem("access_token"),
+    // Always try to fetch - API will handle auth errors
+    retry: false, // Don't retry on failure to avoid multiple redirect attempts
   })
 }
 
@@ -86,6 +94,14 @@ export const useUser = (id: number | string | undefined, options?: { enabled?: b
     queryKey: queryKeys.users.detail(id || 0),
     queryFn: () => usersAPI.getUser(id!),
     enabled: options?.enabled !== false && !!id,
+  })
+}
+
+export const useUserStats = () => {
+  return useQuery({
+    queryKey: queryKeys.userStats.all,
+    queryFn: () => usersAPI.getStats(),
+    enabled: typeof window !== "undefined" && !!localStorage.getItem("access_token"),
   })
 }
 
@@ -196,6 +212,19 @@ export const useDeleteBorrowRequest = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.borrowRequests.all })
     },
+  })
+}
+
+// Borrow Records Hooks
+export const useBorrowRecords = (params?: {
+  status?: string
+  borrower?: number
+  owner?: number
+}) => {
+  return useQuery({
+    queryKey: queryKeys.borrowRecords.all(params),
+    queryFn: () => borrowRecordsAPI.getRecords(params),
+    enabled: typeof window !== "undefined" && !!localStorage.getItem("access_token"),
   })
 }
 

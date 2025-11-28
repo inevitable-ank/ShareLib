@@ -27,9 +27,33 @@ export const clearTokens = (): void => {
 // API request helper
 export async function apiRequest<T>(
   endpoint: string,
-  options: RequestInit = {}
+  options: RequestInit = {},
+  retryOn401: boolean = true
 ): Promise<T> {
-  const token = getAccessToken()
+  let token = getAccessToken()
+  
+  // If no access token but we have refresh token, try to refresh first
+  // This handles the case where access token was cleared but refresh token still exists
+  if (!token && retryOn401) {
+    const refreshToken = getRefreshToken()
+    if (refreshToken) {
+      try {
+        await authAPI.refreshToken()
+        token = getAccessToken() // Get the new access token
+        // If we still don't have a token after refresh, something is wrong
+        if (!token) {
+          clearTokens()
+          throw new Error('Failed to retrieve access token after refresh')
+        }
+      } catch (error) {
+        // Refresh failed - clear tokens and re-throw to let caller handle it
+        clearTokens()
+        throw error
+      }
+    }
+    // If no refresh token and no access token, proceed without auth header
+    // The request will fail with 401, which will be handled below
+  }
   
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -45,8 +69,56 @@ export async function apiRequest<T>(
     headers: headers as HeadersInit,
   })
 
+  // Handle 401 Unauthorized - try to refresh token if we have a refresh token
+  if (response.status === 401 && retryOn401) {
+    const refreshToken = getRefreshToken()
+    if (refreshToken) {
+      try {
+        await authAPI.refreshToken()
+        // Retry the original request with new token
+        const newToken = getAccessToken()
+        if (newToken) {
+          headers['Authorization'] = `Bearer ${newToken}`
+          const retryResponse = await fetch(`${API_BASE_URL}${endpoint}`, {
+            ...options,
+            headers: headers as HeadersInit,
+          })
+          if (!retryResponse.ok) {
+            const error = await retryResponse.json().catch(() => ({ detail: 'An error occurred' }))
+            // If retry still fails with 401, refresh token is also invalid - clear tokens
+            if (retryResponse.status === 401) {
+              clearTokens()
+            }
+            throw new Error(error.detail || error.message || `HTTP error! status: ${retryResponse.status}`)
+          }
+          return retryResponse.json()
+        } else {
+          // Got new token from refresh but can't retrieve it - clear and fail
+          clearTokens()
+          throw new Error('Failed to retrieve new access token after refresh')
+        }
+      } catch (refreshError) {
+        // Refresh failed (network error, invalid refresh token, etc.) - clear tokens
+        clearTokens()
+        throw new Error('Session expired. Please login again.')
+      }
+    } else {
+      // No refresh token available - clear stale access token
+      clearTokens()
+      // Let it fall through to error handler below to throw proper error
+    }
+  }
+
+  // Handle all other errors (including 401 if retryOn401 is false)
   if (!response.ok) {
     const error = await response.json().catch(() => ({ detail: 'An error occurred' }))
+    
+    // Only clear tokens on 401 if we didn't already handle it above
+    // (i.e., when retryOn401 is false or endpoint doesn't support refresh)
+    if (response.status === 401 && !retryOn401) {
+      clearTokens()
+    }
+    
     throw new Error(error.detail || error.message || `HTTP error! status: ${response.status}`)
   }
 
@@ -103,10 +175,11 @@ export const authAPI = {
     const refresh = getRefreshToken()
     if (!refresh) throw new Error('No refresh token available')
     
+    // Don't retry on 401 for refresh token call to avoid infinite loop
     const response = await apiRequest<{ access: string }>('/auth/refresh/', {
       method: 'POST',
       body: JSON.stringify({ refresh }),
-    })
+    }, false)
     
     const accessToken = response.access
     const refreshToken = getRefreshToken() // Keep existing refresh token
@@ -123,6 +196,10 @@ export const usersAPI = {
   getUser: async (id: number | string) => {
     return apiRequest(`/users/${id}/`)
   },
+
+  getStats: async () => {
+    return apiRequest('/users/me/stats/')
+  },
 }
 
 // Items API
@@ -136,8 +213,15 @@ export const itemsAPI = {
     ordering?: string
     page?: number
   }) => {
-    const queryString = params
-      ? '?' + new URLSearchParams(params as Record<string, string>).toString()
+    // Filter out undefined/null values to prevent them from being added to query string
+    const filteredParams = params
+      ? Object.fromEntries(
+          Object.entries(params).filter(([_, value]) => value !== undefined && value !== null)
+        )
+      : {}
+    
+    const queryString = Object.keys(filteredParams).length > 0
+      ? '?' + new URLSearchParams(filteredParams as Record<string, string>).toString()
       : ''
     return apiRequest(`/items/${queryString}`)
   },
@@ -233,6 +317,20 @@ export const borrowRequestsAPI = {
     return apiRequest(`/borrows/requests/${id}/`, {
       method: 'DELETE',
     })
+  },
+}
+
+// Borrow Records API
+export const borrowRecordsAPI = {
+  getRecords: async (params?: {
+    status?: string
+    borrower?: number
+    owner?: number
+  }) => {
+    const queryString = params
+      ? '?' + new URLSearchParams(params as Record<string, string>).toString()
+      : ''
+    return apiRequest(`/borrows/records/${queryString}`)
   },
 }
 

@@ -4,8 +4,9 @@ import Header from "@/app/components/header"
 import Footer from "@/app/components/footer"
 import RatingDisplay from "@/app/components/rating-display"
 import { Mail, MapPin, Calendar, Edit, LogOut, Award, TrendingUp } from "lucide-react"
-import { useState, useMemo } from "react"
-import { useProfile, useItems, useBorrowRequests, useRatings } from "@/app/lib/queries"
+import { useState, useMemo, useEffect } from "react"
+import { useRouter } from "next/navigation"
+import { useProfile, useItems, useBorrowRequests, useBorrowRecords, useRatings, useUserStats } from "@/app/lib/queries"
 
 // Helper function to format relative time
 function formatRelativeTime(dateString: string): string {
@@ -27,13 +28,34 @@ function formatRelativeTime(dateString: string): string {
 
 export default function ProfilePage() {
   const [activeTab, setActiveTab] = useState<"overview" | "activity" | "settings">("overview")
+  const router = useRouter()
 
   // Fetch real data
-  const { data: profile, isLoading: profileLoading } = useProfile()
+  const { data: profile, isLoading: profileLoading, error: profileError } = useProfile()
+
+  // Redirect to login if session expired
+  useEffect(() => {
+    if (profileError) {
+      const errorMessage = profileError instanceof Error ? profileError.message : String(profileError)
+      if (errorMessage.includes('Session expired') || errorMessage.includes('token') || errorMessage.includes('401')) {
+        // Small delay to let error display briefly, then redirect
+        const timer = setTimeout(() => {
+          router.push('/login')
+        }, 1500)
+        return () => clearTimeout(timer)
+      }
+    }
+  }, [profileError, router])
   const profileId = profile && typeof profile === 'object' ? (profile as any).id : undefined
-  const { data: itemsData, isLoading: itemsLoading } = useItems({ owner: profileId })
+  // Only fetch items when we have a valid profileId (prevents owner=undefined in query)
+  const { data: itemsData, isLoading: itemsLoading } = useItems(
+    profileId ? { owner: profileId } : undefined
+  )
   const { data: borrowRequestsData, isLoading: borrowRequestsLoading } = useBorrowRequests()
+  const { data: borrowRecordsData, isLoading: borrowRecordsLoading } = useBorrowRecords()
   const { data: ratingsData, isLoading: ratingsLoading } = useRatings()
+  // Try to use stats endpoint (will gracefully fail if not available yet)
+  const { data: userStatsData, isLoading: userStatsLoading, error: userStatsError } = useUserStats()
 
   // Calculate user data from API responses
   const user = useMemo(() => {
@@ -58,10 +80,41 @@ export default function ProfilePage() {
     }
   }, [profile])
 
-  // Calculate stats from API data
+  // Calculate stats from API data - use stats endpoint if available, otherwise calculate
   const stats = useMemo(() => {
     const profileId = profile && typeof profile === 'object' ? (profile as any).id : null
     
+    // If stats endpoint is available, use it (much more efficient)
+    if (userStatsData && !userStatsError && typeof userStatsData === 'object') {
+      const stats = userStatsData as any
+      const avgLender = parseFloat(stats.average_lender_rating || '0')
+      const avgBorrower = parseFloat(stats.average_borrower_rating || '0')
+      
+      // Calculate average rating: if both exist, average them; otherwise use the one that exists
+      let avgRating = 0
+      if (avgLender > 0 && avgBorrower > 0) {
+        avgRating = (avgLender + avgBorrower) / 2
+      } else if (avgLender > 0) {
+        avgRating = avgLender
+      } else if (avgBorrower > 0) {
+        avgRating = avgBorrower
+      }
+      
+      let reputation = "New"
+      if (avgRating >= 4.5) reputation = "Excellent"
+      else if (avgRating >= 4.0) reputation = "Very Good"
+      else if (avgRating >= 3.5) reputation = "Good"
+      else if (avgRating >= 3.0) reputation = "Fair"
+      
+      return [
+        { label: "Items Lent", value: stats.items_lent || 0, icon: "📦" },
+        { label: "Items Borrowed", value: stats.items_borrowed || 0, icon: "📥" },
+        { label: "Active Loans", value: stats.active_loans || 0, icon: "⏱" },
+        { label: "Reputation", value: reputation, icon: "⭐" },
+      ]
+    }
+    
+    // Fallback: Calculate from individual endpoints
     if (!itemsData || !borrowRequestsData || !profileId) {
       return [
         { label: "Items Lent", value: 0, icon: "📦" },
@@ -76,20 +129,39 @@ export default function ProfilePage() {
       : (Array.isArray(itemsData) ? itemsData : [])
     const itemsLent = itemsArray.length
     
-    // Count items borrowed (requests where user is borrower and status is approved/borrowed)
-    const requestsArray = Array.isArray((borrowRequestsData as any).results) 
-      ? (borrowRequestsData as any).results 
-      : (Array.isArray(borrowRequestsData) ? borrowRequestsData : [])
+    // Count items borrowed from borrow records if available, otherwise from requests
+    let itemsBorrowed = 0
+    let activeLoans = 0
     
-    const itemsBorrowed = requestsArray.filter((req: any) => 
-      req.borrower === profileId && (req.status === "approved" || req.status === "borrowed")
-    ).length
+    if (borrowRecordsData) {
+      const recordsArray = Array.isArray((borrowRecordsData as any).results) 
+        ? (borrowRecordsData as any).results 
+        : (Array.isArray(borrowRecordsData) ? borrowRecordsData : [])
+      
+      itemsBorrowed = recordsArray.filter((record: any) => 
+        record.request?.borrower === profileId && 
+        (record.status === "borrowed" || record.status === "returned")
+      ).length
+      
+      activeLoans = recordsArray.filter((record: any) => 
+        (record.request?.borrower === profileId || record.request?.item?.owner === profileId) && 
+        record.status === "borrowed"
+      ).length
+    } else {
+      // Fallback to requests
+      const requestsArray = Array.isArray((borrowRequestsData as any).results) 
+        ? (borrowRequestsData as any).results 
+        : (Array.isArray(borrowRequestsData) ? borrowRequestsData : [])
+      
+      itemsBorrowed = requestsArray.filter((req: any) => 
+        req.borrower === profileId && (req.status === "approved" || req.status === "borrowed")
+      ).length
 
-    // Count active loans (requests with status approved/borrowed)
-    const activeLoans = requestsArray.filter((req: any) => 
-      (req.borrower === profileId || req.item?.owner === profileId) && 
-      (req.status === "approved" || req.status === "borrowed")
-    ).length
+      activeLoans = requestsArray.filter((req: any) => 
+        (req.borrower === profileId || req.item?.owner === profileId) && 
+        (req.status === "approved" || req.status === "borrowed")
+      ).length
+    }
 
     // Calculate reputation based on ratings
     let reputation = "New"
@@ -113,9 +185,9 @@ export default function ProfilePage() {
       { label: "Active Loans", value: activeLoans, icon: "⏱" },
       { label: "Reputation", value: reputation, icon: "⭐" },
     ]
-  }, [itemsData, borrowRequestsData, ratingsData, profile])
+  }, [userStatsData, userStatsError, itemsData, borrowRequestsData, borrowRecordsData, ratingsData, profile])
 
-  // Calculate ratings
+  // Calculate ratings - derive rating_type from item ownership if not provided by backend
   const ratings = useMemo(() => {
     const profileId = profile && typeof profile === 'object' ? (profile as any).id : null
     
@@ -135,10 +207,21 @@ export default function ProfilePage() {
     // Filter ratings where current user is the recipient
     const receivedRatings = ratingsArray.filter((r: any) => r.to_user === profileId)
     
-    // Separate lender and borrower ratings (this is a simplification - you may need to adjust based on your API structure)
-    // Assuming lender ratings are when user lent items, borrower ratings when user borrowed items
-    const lenderRatings = receivedRatings.filter((r: any) => r.rating_type === "lender" || !r.rating_type) // Default to lender if not specified
-    const borrowerRatings = receivedRatings.filter((r: any) => r.rating_type === "borrower")
+    // Separate lender and borrower ratings
+    // If backend provides rating_type, use it; otherwise derive from item ownership
+    const lenderRatings = receivedRatings.filter((r: any) => {
+      if (r.rating_type === "lender") return true
+      if (r.rating_type === "borrower") return false
+      // Derive: if to_user owns the item, it's a lender rating
+      return r.item?.owner === profileId || (typeof r.item === 'object' && r.item?.owner?.id === profileId)
+    })
+    
+    const borrowerRatings = receivedRatings.filter((r: any) => {
+      if (r.rating_type === "borrower") return true
+      if (r.rating_type === "lender") return false
+      // Derive: if to_user doesn't own the item, it's a borrower rating
+      return r.item?.owner !== profileId && (typeof r.item === 'object' && r.item?.owner?.id !== profileId)
+    })
 
     const lenderRating = lenderRatings.length > 0
       ? lenderRatings.reduce((sum: number, r: any) => sum + (r.stars || 0), 0) / lenderRatings.length
@@ -156,31 +239,56 @@ export default function ProfilePage() {
     }
   }, [ratingsData, profile])
 
-  // Build activity feed from borrow requests and ratings
+  // Build activity feed from borrow records (preferred) or requests, and ratings
   const activity = useMemo(() => {
     const activities: any[] = []
     const profileId = profile && typeof profile === 'object' ? (profile as any).id : null
 
-    // Add borrow request activities
-    if (borrowRequestsData) {
-      const requests = Array.isArray((borrowRequestsData as any).results) 
-        ? (borrowRequestsData as any).results 
-        : (Array.isArray(borrowRequestsData) ? borrowRequestsData : [])
+    // Prefer borrow records for activity (more accurate history)
+    if (borrowRecordsData) {
+      const records = Array.isArray((borrowRecordsData as any).results) 
+        ? (borrowRecordsData as any).results 
+        : (Array.isArray(borrowRecordsData) ? borrowRecordsData : [])
       
-      requests.forEach((req: any) => {
-        const date = req.created_at || req.requested_date || new Date().toISOString()
-        const itemName = req.item?.title || req.item?.name || "Item"
+      records.forEach((record: any) => {
+        const req = record.request || record
+        const date = record.created_at || record.updated_at || req.created_at || new Date().toISOString()
+        const itemName = req.item?.title || req.item?.name || record.item?.title || record.item?.name || "Item"
         
-        if (req.status === "approved") {
+        if (record.status === "borrowed") {
           activities.push({
-            id: `req-${req.id}`,
+            id: `record-${record.id}`,
             type: "borrow_approved",
             item: itemName,
             date: formatRelativeTime(date),
             status: "Approved",
             timestamp: date,
           })
-        } else if (req.status === "pending") {
+        } else if (record.status === "returned") {
+          activities.push({
+            id: `record-${record.id}`,
+            type: "item_returned",
+            item: itemName,
+            date: formatRelativeTime(date),
+            status: "Returned",
+            timestamp: date,
+          })
+        }
+      })
+    }
+    
+    // Also add pending requests (not yet in records)
+    if (borrowRequestsData) {
+      const requests = Array.isArray((borrowRequestsData as any).results) 
+        ? (borrowRequestsData as any).results 
+        : (Array.isArray(borrowRequestsData) ? borrowRequestsData : [])
+      
+      requests.forEach((req: any) => {
+        // Only add if status is pending (not yet a record)
+        if (req.status === "pending") {
+          const date = req.created_at || req.requested_date || new Date().toISOString()
+          const itemName = req.item?.title || req.item?.name || "Item"
+          
           activities.push({
             id: `req-${req.id}`,
             type: "borrow_request",
@@ -202,7 +310,10 @@ export default function ProfilePage() {
       
       receivedRatings.forEach((rating: any) => {
         const date = rating.created_at || new Date().toISOString()
-        const fromUser = rating.from_user?.username || rating.from_user?.first_name || "Someone"
+        const fromUser = rating.from_user?.username || 
+                        (typeof rating.from_user === 'object' ? rating.from_user?.first_name : null) ||
+                        rating.from_user || 
+                        "Someone"
         
         activities.push({
           id: `rating-${rating.id}`,
@@ -221,10 +332,10 @@ export default function ProfilePage() {
       const dateB = new Date(b.timestamp || 0).getTime()
       return dateB - dateA
     }).slice(0, 10) // Limit to 10 most recent
-  }, [borrowRequestsData, ratingsData, profile])
+  }, [borrowRecordsData, borrowRequestsData, ratingsData, profile])
 
   // Loading state
-  if (profileLoading || !user) {
+  if (profileLoading) {
     return (
       <>
         <Header />
@@ -232,6 +343,26 @@ export default function ProfilePage() {
           <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
             <div className="text-center py-12">
               <p className="text-muted-foreground">Loading profile...</p>
+            </div>
+          </div>
+        </main>
+        <Footer />
+      </>
+    )
+  }
+
+  // Error state
+  if (profileError || !user) {
+    return (
+      <>
+        <Header />
+        <main className="min-h-screen bg-background">
+          <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+            <div className="text-center py-12">
+              <p className="text-destructive mb-4">
+                {profileError instanceof Error ? profileError.message : 'Failed to load profile'}
+              </p>
+              <p className="text-muted-foreground">Please try refreshing the page or login again.</p>
             </div>
           </div>
         </main>
