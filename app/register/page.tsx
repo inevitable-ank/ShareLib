@@ -3,19 +3,30 @@
 import type React from "react"
 
 import Link from "next/link"
-import { useState } from "react"
+import { useState, useEffect } from "react"
+import { useRouter } from "next/navigation"
 import { Mail, Lock, User, MapPin, ArrowRight } from "lucide-react"
+import { useRegister } from "@/app/lib/queries"
 
 export default function RegisterPage() {
+  const router = useRouter()
+  const registerMutation = useRegister()
   const [formData, setFormData] = useState({
-    name: "",
+    username: "",
+    firstName: "",
+    lastName: "",
     email: "",
     password: "",
     confirmPassword: "",
     location: "",
     agreeTerms: false,
   })
-  const [isLoading, setIsLoading] = useState(false)
+
+  useEffect(() => {
+    if (registerMutation.isSuccess) {
+      router.push("/login?registered=true")
+    }
+  }, [registerMutation.isSuccess, router])
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value, type, checked } = e.target
@@ -27,14 +38,35 @@ export default function RegisterPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+
     if (formData.password !== formData.confirmPassword) {
-      alert("Passwords do not match")
       return
     }
-    setIsLoading(true)
-    // API call would go here
-    setTimeout(() => setIsLoading(false), 1000)
+
+    if (formData.password.length < 8) {
+      return
+    }
+
+    registerMutation.mutate({
+      username: formData.username,
+      email: formData.email,
+      password: formData.password,
+      password2: formData.confirmPassword,
+      first_name: formData.firstName || undefined,
+      last_name: formData.lastName || undefined,
+      location: formData.location || undefined,
+    })
   }
+
+  const error =
+    formData.password !== formData.confirmPassword
+      ? "Passwords do not match"
+      : formData.password.length < 8 && formData.password.length > 0
+        ? "Password must be at least 8 characters long"
+        : registerMutation.error instanceof Error
+          ? registerMutation.error.message
+          : null
+  const isLoading = registerMutation.isPending
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-primary/5 to-accent/5 flex items-center justify-center p-4">
@@ -50,22 +82,67 @@ export default function RegisterPage() {
 
         {/* Form */}
         <form onSubmit={handleSubmit} className="bg-card rounded-xl shadow-lg p-8 space-y-4">
-          {/* Name Input */}
+          {/* Error Message */}
+          {error && (
+            <div className="p-3 bg-destructive/10 border border-destructive/20 rounded-lg text-sm text-destructive">
+              {error}
+            </div>
+          )}
+
+          {/* Username Input */}
           <div>
-            <label htmlFor="name" className="block text-sm font-medium text-foreground mb-2">
-              Full Name
+            <label htmlFor="username" className="block text-sm font-medium text-foreground mb-2">
+              Username
             </label>
             <div className="relative">
               <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
               <input
-                id="name"
-                name="name"
+                id="username"
+                name="username"
                 type="text"
-                placeholder="Your full name"
-                value={formData.name}
+                placeholder="Choose a username"
+                value={formData.username}
                 onChange={handleChange}
                 className="w-full pl-10 pr-4 py-3 rounded-lg bg-input border border-border focus:outline-none focus:ring-2 focus:ring-primary/50 transition-smooth"
                 required
+              />
+            </div>
+          </div>
+
+          {/* First Name Input */}
+          <div>
+            <label htmlFor="firstName" className="block text-sm font-medium text-foreground mb-2">
+              First Name
+            </label>
+            <div className="relative">
+              <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+              <input
+                id="firstName"
+                name="firstName"
+                type="text"
+                placeholder="Your first name"
+                value={formData.firstName}
+                onChange={handleChange}
+                className="w-full pl-10 pr-4 py-3 rounded-lg bg-input border border-border focus:outline-none focus:ring-2 focus:ring-primary/50 transition-smooth"
+              />
+            </div>
+          </div>
+
+          {/* Last Name Input */}
+          <div>
+            <label htmlFor="lastName" className="block text-sm font-medium text-foreground mb-2">
+              Last Name
+            </label>
+            <div className="relative">
+              <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+              <input
+                id="lastName"
+                name="lastName"
+                type="text"
+                placeholder="Your last name"
+                value={formData.lastName}
+                onChange={handleChange}
+                className="w-full pl-10 pr-4 py-3 rounded-lg bg-input border border-border focus:outline-none focus:ring-2 focus:ring-primary/50 transition-smooth"
               />
             </div>
           </div>

@@ -2,8 +2,9 @@
 
 import type React from "react"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Calendar, MessageSquare, X } from "lucide-react"
+import { useCreateBorrowRequest } from "@/app/lib/queries"
 
 interface BorrowRequestModalProps {
   isOpen: boolean
@@ -16,19 +17,51 @@ export default function BorrowRequestModal({ isOpen, onClose, itemTitle, itemId 
   const [startDate, setStartDate] = useState("")
   const [endDate, setEndDate] = useState("")
   const [message, setMessage] = useState("")
-  const [isSubmitting, setIsSubmitting] = useState(false)
+  const createRequestMutation = useCreateBorrowRequest()
+
+  useEffect(() => {
+    if (createRequestMutation.isSuccess) {
+      setStartDate("")
+      setEndDate("")
+      setMessage("")
+      onClose()
+    }
+  }, [createRequestMutation.isSuccess, onClose])
 
   if (!isOpen) return null
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    setIsSubmitting(true)
-    // API call would go here
-    setTimeout(() => {
-      setIsSubmitting(false)
-      onClose()
-    }, 1000)
+
+    if (!startDate || !endDate) {
+      return
+    }
+
+    if (new Date(endDate) < new Date(startDate)) {
+      return
+    }
+
+    // Convert dates to ISO format
+    const startDateISO = new Date(startDate).toISOString()
+    const endDateISO = new Date(endDate).toISOString()
+
+    createRequestMutation.mutate({
+      item_id: parseInt(itemId),
+      message: message || undefined,
+      start_date: startDateISO,
+      end_date: endDateISO,
+    })
   }
+
+  const error =
+    !startDate || !endDate
+      ? "Please select both start and end dates"
+      : new Date(endDate) < new Date(startDate)
+        ? "End date must be after start date"
+        : createRequestMutation.error instanceof Error
+          ? createRequestMutation.error.message
+          : null
+  const isSubmitting = createRequestMutation.isPending
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
@@ -43,6 +76,13 @@ export default function BorrowRequestModal({ isOpen, onClose, itemTitle, itemId 
 
         {/* Content */}
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          {/* Error Message */}
+          {error && (
+            <div className="p-3 bg-destructive/10 border border-destructive/20 rounded-lg text-sm text-destructive">
+              {error}
+            </div>
+          )}
+
           {/* Item Title */}
           <div className="p-4 bg-primary/10 rounded-lg">
             <p className="text-sm text-muted-foreground">Requesting to borrow</p>

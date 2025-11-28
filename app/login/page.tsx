@@ -3,20 +3,38 @@
 import type React from "react"
 
 import Link from "next/link"
-import { useState } from "react"
+import { useState, useEffect } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
 import { Mail, Lock, ArrowRight } from "lucide-react"
+import { useLogin } from "@/app/lib/queries"
 
 export default function LoginPage() {
+  const router = useRouter()
+  const searchParams = useSearchParams()
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
-  const [isLoading, setIsLoading] = useState(false)
+  const [successMessage, setSuccessMessage] = useState<string | null>(null)
+  const loginMutation = useLogin()
+
+  useEffect(() => {
+    if (searchParams.get("registered") === "true") {
+      setSuccessMessage("Registration successful! Please log in.")
+    }
+  }, [searchParams])
+
+  useEffect(() => {
+    if (loginMutation.isSuccess) {
+      router.push("/")
+    }
+  }, [loginMutation.isSuccess, router])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    setIsLoading(true)
-    // API call would go here
-    setTimeout(() => setIsLoading(false), 1000)
+    loginMutation.mutate({ email, password })
   }
+
+  const error = loginMutation.error instanceof Error ? loginMutation.error.message : null
+  const isLoading = loginMutation.isPending
 
   return (
     <div className="min-h-screen flex">
@@ -58,6 +76,20 @@ export default function LoginPage() {
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
+            {/* Success Message */}
+            {successMessage && (
+              <div className="p-3 bg-accent/10 border border-accent/20 rounded-lg text-sm text-accent">
+                {successMessage}
+              </div>
+            )}
+
+            {/* Error Message */}
+            {error && (
+              <div className="p-3 bg-destructive/10 border border-destructive/20 rounded-lg text-sm text-destructive">
+                {error}
+              </div>
+            )}
+
             {/* Email Input */}
             <div>
               <label htmlFor="email" className="block text-sm font-medium text-foreground mb-2">
