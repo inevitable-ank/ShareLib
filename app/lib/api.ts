@@ -366,3 +366,35 @@ export const categoriesAPI = {
   },
 }
 
+// Notifications API
+export const notificationsAPI = {
+  getNotifications: async (params?: {
+    filter?: 'all' | 'unread'
+    page?: number
+    page_size?: number
+  }) => {
+    const queryString = params
+      ? '?' + new URLSearchParams(params as Record<string, string>).toString()
+      : ''
+    return apiRequest(`/notifications/${queryString}`)
+  },
+
+  markAsRead: async (id: number | string) => {
+    return apiRequest(`/notifications/${id}/read/`, {
+      method: 'PATCH',
+    })
+  },
+
+  markAllAsRead: async () => {
+    return apiRequest('/notifications/mark-all-read/', {
+      method: 'POST',
+    })
+  },
+
+  deleteNotification: async (id: number | string) => {
+    return apiRequest(`/notifications/${id}/`, {
+      method: 'DELETE',
+    })
+  },
+}
+

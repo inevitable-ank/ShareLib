@@ -2,12 +2,45 @@
 
 import Link from "next/link"
 import { Bell, User, Search, Menu, X } from "lucide-react"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useAuth } from "@/app/lib/queries"
+import { notificationsAPI } from "@/app/lib/api"
 
 export default function Header() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [unreadCount, setUnreadCount] = useState(0)
   const isAuthenticated = useAuth()
+
+  // Fetch unread notification count
+  useEffect(() => {
+    if (isAuthenticated) {
+      const fetchUnreadCount = async () => {
+        try {
+          const response = await notificationsAPI.getNotifications({ filter: "all" })
+          // Backend returns paginated response with unread_count
+          const paginatedResponse = response as any
+          if (paginatedResponse.unread_count !== undefined) {
+            setUnreadCount(paginatedResponse.unread_count)
+          } else {
+            // Fallback: calculate from results if unread_count not available
+            const notifications = Array.isArray(response) 
+              ? response 
+              : paginatedResponse.results || []
+            const unread = notifications.filter((n: any) => !n.is_read).length
+            setUnreadCount(unread)
+          }
+        } catch (err) {
+          // Silently fail - don't show error in header
+          console.error("Error fetching notification count:", err)
+        }
+      }
+      
+      fetchUnreadCount()
+      // Refresh every 30 seconds to get new notifications
+      const interval = setInterval(fetchUnreadCount, 30000)
+      return () => clearInterval(interval)
+    }
+  }, [isAuthenticated])
 
   return (
     <header className="sticky top-0 z-50 bg-background border-b border-border">
@@ -52,7 +85,11 @@ export default function Header() {
               <>
                 <Link href="/notifications" className="relative p-2 rounded-lg hover:bg-muted transition-smooth">
                   <Bell className="w-5 h-5" />
-                  <span className="absolute top-1 right-1 w-2 h-2 bg-accent rounded-full"></span>
+                  {unreadCount > 0 && (
+                    <span className="absolute top-0 right-0 min-w-[18px] h-[18px] px-1 bg-accent text-accent-foreground rounded-full text-xs font-semibold flex items-center justify-center">
+                      {unreadCount > 99 ? '99+' : unreadCount}
+                    </span>
+                  )}
                 </Link>
                 <Link href="/profile" className="p-2 rounded-lg hover:bg-muted transition-smooth">
                   <User className="w-5 h-5" />
