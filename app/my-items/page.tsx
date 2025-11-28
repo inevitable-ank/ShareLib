@@ -52,13 +52,11 @@ export default function MyItemsPage() {
     profileId ? { owner: profileId } : undefined
   )
 
-  // Fetch borrow requests to count pending requests per item
-  const { data: borrowRequestsData } = useBorrowRequests()
+  // Fetch borrow requests to count pending requests per item (only for items I own)
+  const { data: borrowRequestsData } = useBorrowRequests({ lender: 'me' })
 
-  // Fetch borrow records to count borrows per item
-  const { data: borrowRecordsData } = useBorrowRecords(
-    profileId ? { owner: profileId } : undefined
-  )
+  // Fetch borrow records to count borrows per item (only for items I own)
+  const { data: borrowRecordsData } = useBorrowRecords({ owner: 'me' })
 
   // Transform API data to match ItemCard format
   const items = useMemo<TransformedItem[]>(() => {
@@ -91,17 +89,17 @@ export default function MyItemsPage() {
 
     return itemsArray.map((item: any) => {
       // Get first image or placeholder
+      // Backend now returns photos as array of absolute URLs: ["http://..."]
       let image = "/placeholder.svg"
-      if (item.photos) {
-        if (Array.isArray(item.photos)) {
-          image = item.photos[0] || item.photos.find((p: any) => p.image)?.image || "/placeholder.svg"
-        } else if (typeof item.photos === 'string') {
-          image = item.photos
-        } else if (item.photos.image) {
-          image = item.photos.image
-        }
+      if (item.photos && Array.isArray(item.photos) && item.photos.length > 0) {
+        // Photos is now an array of absolute URLs
+        image = item.photos[0] || "/placeholder.svg"
       } else if (item.images && Array.isArray(item.images) && item.images.length > 0) {
-        image = item.images[0].image || item.images[0] || "/placeholder.svg"
+        // Fallback to images field (same as photos)
+        image = item.images[0] || "/placeholder.svg"
+      } else if (item.photos && typeof item.photos === 'string') {
+        // Handle legacy string format if still present
+        image = item.photos
       }
 
       // Get category name
@@ -129,16 +127,11 @@ export default function MyItemsPage() {
       ) || 0
 
       // Count pending requests for this item
+      // Backend now filters by lender=me, so all requests are for items we own
       // Handle both item as object (with id) and item as number (id only)
-      // Also verify that the request is for an item owned by the current user
       const requestCount = requestsArray.filter((req: any) => {
         const requestItemId = typeof req.item === 'object' ? req.item?.id : req.item
-        const itemOwnerId = typeof req.item === 'object' ? req.item?.owner?.id || req.item?.owner : null
-        const lenderId = req.lender?.id || req.lender_id
-        // Match item ID and ensure it's owned by current user (either via item.owner or lender field)
-        return requestItemId === item.id && 
-               req.status === "pending" &&
-               (itemOwnerId === profileId || lenderId === profileId || !itemOwnerId) // If owner not in response, assume it's correct
+        return requestItemId === item.id && req.status === "pending"
       }).length
 
       // Count completed borrows for this item

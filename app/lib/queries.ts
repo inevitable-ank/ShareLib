@@ -208,10 +208,15 @@ export const useDeleteItem = () => {
 }
 
 // Borrow Request Hooks
-export const useBorrowRequests = () => {
+export const useBorrowRequests = (params?: {
+  lender?: 'me' | number
+  owner?: 'me' | number
+  borrower?: 'me' | number
+  status?: string
+}) => {
   return useQuery({
-    queryKey: queryKeys.borrowRequests.all,
-    queryFn: () => borrowRequestsAPI.getRequests(),
+    queryKey: [...queryKeys.borrowRequests.all, params],
+    queryFn: () => borrowRequestsAPI.getRequests(params),
     enabled: typeof window !== "undefined" && !!localStorage.getItem("access_token"),
   })
 }
@@ -261,8 +266,8 @@ export const useDeleteBorrowRequest = () => {
 // Borrow Records Hooks
 export const useBorrowRecords = (params?: {
   status?: string
-  borrower?: number
-  owner?: number
+  borrower?: 'me' | number
+  owner?: 'me' | number
 }) => {
   return useQuery({
     queryKey: queryKeys.borrowRecords.all(params),

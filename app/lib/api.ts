@@ -292,8 +292,20 @@ export const itemsAPI = {
 
 // Borrow Requests API
 export const borrowRequestsAPI = {
-  getRequests: async () => {
-    return apiRequest('/borrows/requests/')
+  getRequests: async (params?: {
+    lender?: 'me' | number
+    owner?: 'me' | number
+    borrower?: 'me' | number
+    status?: string
+  }) => {
+    const queryString = params
+      ? '?' + new URLSearchParams(
+          Object.fromEntries(
+            Object.entries(params).filter(([_, value]) => value !== undefined && value !== null)
+          ) as Record<string, string>
+        ).toString()
+      : ''
+    return apiRequest(`/borrows/requests/${queryString}`)
   },
 
   createRequest: async (data: {
@@ -326,11 +338,15 @@ export const borrowRequestsAPI = {
 export const borrowRecordsAPI = {
   getRecords: async (params?: {
     status?: string
-    borrower?: number
-    owner?: number
+    borrower?: 'me' | number
+    owner?: 'me' | number
   }) => {
     const queryString = params
-      ? '?' + new URLSearchParams(params as Record<string, string>).toString()
+      ? '?' + new URLSearchParams(
+          Object.fromEntries(
+            Object.entries(params).filter(([_, value]) => value !== undefined && value !== null)
+          ) as Record<string, string>
+        ).toString()
       : ''
     return apiRequest(`/borrows/records/${queryString}`)
   },
