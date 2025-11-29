@@ -2,8 +2,10 @@
 
 import Header from "@/app/components/header"
 import Footer from "@/app/components/footer"
-import { CheckCircle, XCircle, Clock, Calendar, User } from "lucide-react"
-import { useState } from "react"
+import { CheckCircle, XCircle, Clock, Calendar, User, Loader2 } from "lucide-react"
+import { useState, useMemo, useEffect } from "react"
+import { useBorrowRequests, useUpdateBorrowRequest } from "@/app/lib/queries"
+import { useRouter } from "next/navigation"
 
 interface BorrowRequest {
   id: string
@@ -17,62 +19,189 @@ interface BorrowRequest {
   requestedDate: string
 }
 
+// Helper function to format relative time
+function formatRelativeTime(dateString: string): string {
+  try {
+    const date = new Date(dateString)
+    const now = new Date()
+    const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000)
+    
+    if (diffInSeconds < 60) return "just now"
+    if (diffInSeconds < 3600) {
+      const minutes = Math.floor(diffInSeconds / 60)
+      return `${minutes} ${minutes === 1 ? "minute" : "minutes"} ago`
+    }
+    if (diffInSeconds < 86400) {
+      const hours = Math.floor(diffInSeconds / 3600)
+      return `${hours} ${hours === 1 ? "hour" : "hours"} ago`
+    }
+    if (diffInSeconds < 604800) {
+      const days = Math.floor(diffInSeconds / 86400)
+      return `${days} ${days === 1 ? "day" : "days"} ago`
+    }
+    if (diffInSeconds < 2592000) {
+      const weeks = Math.floor(diffInSeconds / 604800)
+      return `${weeks} ${weeks === 1 ? "week" : "weeks"} ago`
+    }
+    const months = Math.floor(diffInSeconds / 2592000)
+    return `${months} ${months === 1 ? "month" : "months"} ago`
+  } catch {
+    return "recently"
+  }
+}
+
+// Helper function to format date
+function formatDate(dateString: string): string {
+  try {
+    const date = new Date(dateString)
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+  } catch {
+    return dateString
+  }
+}
+
 export default function RequestsPage() {
-  const [requests, setRequests] = useState<BorrowRequest[]>([
-    {
-      id: "1",
-      item: "Drill Machine",
-      requester: "Sarah Johnson",
-      requesterRating: 4.7,
-      startDate: "Jan 15, 2025",
-      endDate: "Jan 22, 2025",
-      status: "pending",
-      message: "I need this for a home improvement project. Will take great care of it!",
-      requestedDate: "2 hours ago",
-    },
-    {
-      id: "2",
-      item: "Pressure Washer",
-      requester: "Mike Chen",
-      requesterRating: 4.9,
-      startDate: "Jan 20, 2025",
-      endDate: "Jan 25, 2025",
-      status: "approved",
-      requestedDate: "1 day ago",
-    },
-    {
-      id: "3",
-      item: "Mountain Bike",
-      requester: "Emma Davis",
-      requesterRating: 4.6,
-      startDate: "Jan 10, 2025",
-      endDate: "Jan 17, 2025",
-      status: "rejected",
-      requestedDate: "3 days ago",
-    },
-    {
-      id: "4",
-      item: "Camera",
-      requester: "John Lee",
-      requesterRating: 4.8,
-      startDate: "Jan 25, 2025",
-      endDate: "Feb 1, 2025",
-      status: "pending",
-      message: "Looking for a camera for a weekend trip. Thanks!",
-      requestedDate: "5 hours ago",
-    },
-  ])
-
+  const router = useRouter()
   const [activeTab, setActiveTab] = useState<"pending" | "approved" | "all">("all")
+  const [processingId, setProcessingId] = useState<string | null>(null)
 
-  const filteredRequests = activeTab === "all" ? requests : requests.filter((r) => r.status === activeTab)
+  // Fetch borrow requests where current user is the lender (owner of the item)
+  const { data: borrowRequestsData, isLoading, error } = useBorrowRequests({ lender: 'me' })
+  
+  // Mutation for updating request status
+  const updateRequestMutation = useUpdateBorrowRequest()
 
-  const handleApprove = (id: string) => {
-    setRequests(requests.map((r) => (r.id === id ? { ...r, status: "approved" } : r)))
+  // Redirect to login if session expired
+  useEffect(() => {
+    if (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      if (errorMessage.includes('Session expired') || errorMessage.includes('token') || errorMessage.includes('401')) {
+        const timer = setTimeout(() => {
+          router.push('/login')
+        }, 1500)
+        return () => clearTimeout(timer)
+      }
+    }
+  }, [error, router])
+
+  // Transform backend data to frontend format
+  const requests = useMemo<BorrowRequest[]>(() => {
+    if (!borrowRequestsData) return []
+
+    // Handle both array and paginated response formats
+    const requestsArray = Array.isArray(borrowRequestsData)
+      ? borrowRequestsData
+      : (borrowRequestsData as any)?.results || []
+
+    return requestsArray.map((req: any) => {
+      // Extract item title - backend provides item object with title
+      const itemTitle = req.item?.title || req.item?.name || "Item"
+      
+      // Extract requester (borrower) information
+      // Backend provides both 'requester' (alias) and 'borrower' fields
+      const requester = req.requester || req.borrower
+      
+      // Backend now provides full_name field (computed from first_name + last_name)
+      // Fallback to constructing from first_name/last_name, then username
+      const requesterName = requester?.full_name 
+        || (requester?.first_name && requester?.last_name 
+          ? `${requester.first_name} ${requester.last_name}`.trim()
+          : requester?.first_name || requester?.last_name
+          ? `${requester.first_name || ''} ${requester.last_name || ''}`.trim()
+          : requester?.username || "Unknown User")
+      
+      // Extract requester rating
+      // Backend provides context-aware 'rating' field (shows borrower_rating when viewing as lender)
+      // Also has borrower_rating and lender_rating as fallbacks
+      let requesterRating = 0
+      if (requester?.rating !== undefined && requester?.rating !== null) {
+        requesterRating = typeof requester.rating === 'string' 
+          ? parseFloat(requester.rating) || 0
+          : Number(requester.rating) || 0
+      } else if (requester?.borrower_rating !== undefined && requester?.borrower_rating !== null) {
+        requesterRating = typeof requester.borrower_rating === 'string'
+          ? parseFloat(requester.borrower_rating) || 0
+          : Number(requester.borrower_rating) || 0
+      }
+
+      // Format dates - backend provides start_date and end_date as date strings
+      const startDate = req.start_date ? formatDate(req.start_date) : "Not specified"
+      const endDate = req.end_date ? formatDate(req.end_date) : "Not specified"
+      
+      // Format requested date (relative time)
+      // Backend provides requested_at and created_at aliases for request_date
+      const requestedDate = req.requested_at 
+        ? formatRelativeTime(req.requested_at)
+        : req.created_at 
+        ? formatRelativeTime(req.created_at)
+        : req.request_date
+        ? formatRelativeTime(req.request_date)
+        : "recently"
+
+      // Map backend status to frontend status
+      // Backend status choices: pending, approved, rejected, cancelled, completed, returned
+      let status: "pending" | "approved" | "rejected" = "pending"
+      if (req.status === "approved" || req.status === "completed" || req.status === "returned") {
+        // Approved, completed, and returned requests are shown as "approved"
+        status = "approved"
+      } else if (req.status === "rejected" || req.status === "cancelled") {
+        // Rejected and cancelled requests are shown as "rejected"
+        status = "rejected"
+      } else {
+        // Default to pending for any other status
+        status = "pending"
+      }
+
+      return {
+        id: String(req.id),
+        item: itemTitle,
+        requester: requesterName,
+        requesterRating: requesterRating,
+        startDate: startDate,
+        endDate: endDate,
+        status: status,
+        message: req.message || undefined,
+        requestedDate: requestedDate,
+      }
+    })
+  }, [borrowRequestsData])
+
+  const filteredRequests = activeTab === "all" 
+    ? requests 
+    : requests.filter((r) => r.status === activeTab)
+
+  const handleApprove = async (id: string) => {
+    setProcessingId(id)
+    try {
+      await updateRequestMutation.mutateAsync({
+        id: id,
+        data: { status: "approved" }
+      })
+      // Success - data will automatically refresh via query invalidation
+    } catch (error) {
+      console.error("Failed to approve request:", error)
+      // Error is handled by the mutation and will be shown in the error state
+      // The mutation automatically invalidates queries, so UI will update
+    } finally {
+      setProcessingId(null)
+    }
   }
 
-  const handleReject = (id: string) => {
-    setRequests(requests.map((r) => (r.id === id ? { ...r, status: "rejected" } : r)))
+  const handleReject = async (id: string) => {
+    setProcessingId(id)
+    try {
+      await updateRequestMutation.mutateAsync({
+        id: id,
+        data: { status: "rejected" }
+      })
+      // Success - data will automatically refresh via query invalidation
+    } catch (error) {
+      console.error("Failed to reject request:", error)
+      // Error is handled by the mutation and will be shown in the error state
+      // The mutation automatically invalidates queries, so UI will update
+    } finally {
+      setProcessingId(null)
+    }
   }
 
   const getStatusColor = (status: string) => {
@@ -104,50 +233,71 @@ export default function RequestsPage() {
             <p className="text-muted-foreground">Manage requests from people who want to borrow your items</p>
           </div>
 
+          {/* Loading State */}
+          {isLoading && (
+            <div className="flex items-center justify-center py-16">
+              <Loader2 className="w-8 h-8 text-primary animate-spin" />
+            </div>
+          )}
+
+          {/* Error State */}
+          {error && !isLoading && (
+            <div className="bg-destructive/10 border border-destructive rounded-lg p-4 my-8">
+              <p className="text-destructive">
+                {error instanceof Error ? error.message : "Failed to load borrow requests. Please try again."}
+              </p>
+            </div>
+          )}
+
           {/* Stats */}
-          <div className="grid grid-cols-3 gap-4 my-8">
-            <div className="bg-card rounded-xl border border-border p-4 text-center">
-              <div className="text-2xl font-bold text-secondary">
-                {requests.filter((r) => r.status === "pending").length}
+          {!isLoading && (
+            <div className="grid grid-cols-3 gap-4 my-8">
+              <div className="bg-card rounded-xl border border-border p-4 text-center">
+                <div className="text-2xl font-bold text-secondary">
+                  {requests.filter((r) => r.status === "pending").length}
+                </div>
+                <p className="text-sm text-muted-foreground mt-1">Pending</p>
               </div>
-              <p className="text-sm text-muted-foreground mt-1">Pending</p>
-            </div>
-            <div className="bg-card rounded-xl border border-border p-4 text-center">
-              <div className="text-2xl font-bold text-accent">
-                {requests.filter((r) => r.status === "approved").length}
+              <div className="bg-card rounded-xl border border-border p-4 text-center">
+                <div className="text-2xl font-bold text-accent">
+                  {requests.filter((r) => r.status === "approved").length}
+                </div>
+                <p className="text-sm text-muted-foreground mt-1">Approved</p>
               </div>
-              <p className="text-sm text-muted-foreground mt-1">Approved</p>
-            </div>
-            <div className="bg-card rounded-xl border border-border p-4 text-center">
-              <div className="text-2xl font-bold text-destructive">
-                {requests.filter((r) => r.status === "rejected").length}
+              <div className="bg-card rounded-xl border border-border p-4 text-center">
+                <div className="text-2xl font-bold text-destructive">
+                  {requests.filter((r) => r.status === "rejected").length}
+                </div>
+                <p className="text-sm text-muted-foreground mt-1">Rejected</p>
               </div>
-              <p className="text-sm text-muted-foreground mt-1">Rejected</p>
             </div>
-          </div>
+          )}
 
           {/* Filter Tabs */}
-          <div className="flex gap-2 mb-6 border-b border-border">
-            {["all", "pending", "approved"].map((tab) => (
-              <button
-                key={tab}
-                onClick={() => setActiveTab(tab as typeof activeTab)}
-                className={`px-4 py-3 font-semibold border-b-2 transition-smooth ${
-                  activeTab === tab
-                    ? "text-primary border-primary"
-                    : "text-muted-foreground border-transparent hover:text-foreground"
-                }`}
-              >
-                {tab.charAt(0).toUpperCase() + tab.slice(1)}
-              </button>
-            ))}
-          </div>
+          {!isLoading && (
+            <div className="flex gap-2 mb-6 border-b border-border">
+              {["all", "pending", "approved"].map((tab) => (
+                <button
+                  key={tab}
+                  onClick={() => setActiveTab(tab as typeof activeTab)}
+                  className={`px-4 py-3 font-semibold border-b-2 transition-smooth ${
+                    activeTab === tab
+                      ? "text-primary border-primary"
+                      : "text-muted-foreground border-transparent hover:text-foreground"
+                  }`}
+                >
+                  {tab.charAt(0).toUpperCase() + tab.slice(1)}
+                </button>
+              ))}
+            </div>
+          )}
 
           {/* Requests List */}
-          {filteredRequests.length > 0 ? (
+          {!isLoading && filteredRequests.length > 0 ? (
             <div className="space-y-4">
               {filteredRequests.map((request) => {
                 const StatusIcon = getStatusIcon(request.status)
+                const isProcessing = processingId === request.id
                 return (
                   <div
                     key={request.id}
@@ -179,8 +329,12 @@ export default function RequestsPage() {
                         <div className="flex items-center gap-2 mb-4 text-sm">
                           <User className="w-4 h-4 text-muted-foreground" />
                           <span className="text-muted-foreground">{request.requester}</span>
-                          <span className="text-muted-foreground">•</span>
-                          <span className="text-muted-foreground">⭐ {request.requesterRating}</span>
+                          {request.requesterRating > 0 && (
+                            <>
+                              <span className="text-muted-foreground">•</span>
+                              <span className="text-muted-foreground">⭐ {request.requesterRating.toFixed(1)}</span>
+                            </>
+                          )}
                         </div>
 
                         {/* Dates */}
@@ -207,16 +361,26 @@ export default function RequestsPage() {
                         <div className="flex gap-2 flex-shrink-0">
                           <button
                             onClick={() => handleApprove(request.id)}
-                            className="px-4 py-2 bg-accent text-accent-foreground rounded-lg hover-lift font-medium flex items-center gap-2"
+                            disabled={isProcessing || updateRequestMutation.isPending}
+                            className="px-4 py-2 bg-accent text-accent-foreground rounded-lg hover-lift font-medium flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                           >
-                            <CheckCircle className="w-4 h-4" />
+                            {isProcessing ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <CheckCircle className="w-4 h-4" />
+                            )}
                             Approve
                           </button>
                           <button
                             onClick={() => handleReject(request.id)}
-                            className="px-4 py-2 border border-destructive text-destructive rounded-lg hover:bg-destructive/10 font-medium flex items-center gap-2"
+                            disabled={isProcessing || updateRequestMutation.isPending}
+                            className="px-4 py-2 border border-destructive text-destructive rounded-lg hover:bg-destructive/10 font-medium flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                           >
-                            <XCircle className="w-4 h-4" />
+                            {isProcessing ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <XCircle className="w-4 h-4" />
+                            )}
                             Reject
                           </button>
                         </div>
@@ -226,13 +390,13 @@ export default function RequestsPage() {
                 )
               })}
             </div>
-          ) : (
+          ) : !isLoading ? (
             <div className="text-center py-16">
               <Clock className="w-16 h-16 text-muted-foreground/30 mx-auto mb-4" />
               <h3 className="text-xl font-semibold text-foreground mb-2">No requests</h3>
               <p className="text-muted-foreground">You don't have any borrow requests at the moment</p>
             </div>
-          )}
+          ) : null}
         </div>
       </main>
       <Footer />
