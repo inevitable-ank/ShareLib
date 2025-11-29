@@ -5,7 +5,7 @@ import Footer from "@/app/components/footer"
 import RatingDisplay from "@/app/components/rating-display"
 import BorrowRequestModal from "@/app/components/borrow-request-modal"
 import { MapPin, Calendar, Shield, Heart, Share2, ChevronLeft, ChevronRight, Clock, Loader2 } from "lucide-react"
-import { useState } from "react"
+import { useState, use } from "react"
 import Link from "next/link"
 import { useItem, useItemRatings, useUser } from "@/app/lib/queries"
 
@@ -44,7 +44,10 @@ interface Owner {
   borrower_rating?: string
 }
 
-export default function ItemDetailPage({ params }: { params: { id: string } }) {
+export default function ItemDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  // Unwrap the params Promise using React.use()
+  const { id } = use(params)
+  
   const [currentImageIndex, setCurrentImageIndex] = useState(0)
   const [isRequestModalOpen, setIsRequestModalOpen] = useState(false)
   const [isFavorite, setIsFavorite] = useState(false)
@@ -54,12 +57,12 @@ export default function ItemDetailPage({ params }: { params: { id: string } }) {
     data: item,
     isLoading: itemLoading,
     error: itemError,
-  } = useItem(params.id)
+  } = useItem(id)
   const itemData = item as Item | undefined
   const { data: owner } = useUser(itemData?.owner?.id, {
     enabled: !!itemData?.owner?.id,
   })
-  const { data: reviewsData } = useItemRatings(params.id)
+  const { data: reviewsData } = useItemRatings(id)
   const reviews = (reviewsData || []) as Review[]
 
   const isLoading = itemLoading

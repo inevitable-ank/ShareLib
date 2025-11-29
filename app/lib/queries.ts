@@ -1,7 +1,7 @@
 // TanStack Query hooks for API calls
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { useState, useEffect } from "react"
-import { authAPI, usersAPI, itemsAPI, borrowRequestsAPI, borrowRecordsAPI, ratingsAPI, categoriesAPI, getAccessToken } from "./api"
+import { authAPI, usersAPI, itemsAPI, borrowRequestsAPI, borrowRecordsAPI, ratingsAPI, categoriesAPI, favoritesAPI, getAccessToken } from "./api"
 
 // Query Keys
 export const queryKeys = {
@@ -33,6 +33,9 @@ export const queryKeys = {
   },
   categories: {
     all: ["categories"] as const,
+  },
+  favorites: {
+    all: ["favorites"] as const,
   },
 }
 
@@ -315,6 +318,27 @@ export const useCategories = () => {
   return useQuery({
     queryKey: queryKeys.categories.all,
     queryFn: () => categoriesAPI.getCategories(),
+  })
+}
+
+// Favorites Hooks
+export const useFavorites = () => {
+  return useQuery({
+    queryKey: queryKeys.favorites.all,
+    queryFn: () => favoritesAPI.getFavorites(),
+    enabled: typeof window !== "undefined" && !!localStorage.getItem("access_token"),
+  })
+}
+
+export const useToggleFavorite = () => {
+  const queryClient = useQueryClient()
+  
+  return useMutation({
+    mutationFn: (itemId: number | string) => favoritesAPI.toggleFavorite(itemId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.favorites.all })
+      queryClient.invalidateQueries({ queryKey: queryKeys.items.all() })
+    },
   })
 }
 

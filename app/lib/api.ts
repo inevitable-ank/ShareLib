@@ -414,3 +414,17 @@ export const notificationsAPI = {
   },
 }
 
+// Favorites API
+export const favoritesAPI = {
+  toggleFavorite: async (itemId: number | string) => {
+    return apiRequest<{ is_favorited: boolean; message: string }>('/favorites/toggle/', {
+      method: 'POST',
+      body: JSON.stringify({ item: itemId }),
+    })
+  },
+
+  getFavorites: async () => {
+    return apiRequest('/favorites/')
+  },
+}
+

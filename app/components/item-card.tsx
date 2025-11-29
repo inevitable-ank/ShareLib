@@ -14,6 +14,7 @@ interface ItemCardProps {
   location: string
   distance?: string
   isFavorite?: boolean
+  onFavoriteToggle?: (e: React.MouseEvent) => void
 }
 
 export default function ItemCard({
@@ -27,6 +28,7 @@ export default function ItemCard({
   location,
   distance,
   isFavorite = false,
+  onFavoriteToggle,
 }: ItemCardProps) {
   const conditionColors = {
     New: "bg-accent/20 text-accent",
@@ -53,6 +55,7 @@ export default function ItemCard({
               onClick={(e) => {
                 e.preventDefault()
                 e.stopPropagation()
+                onFavoriteToggle?.(e)
               }}
             >
               <Heart className="w-5 h-5" fill={isFavorite ? "currentColor" : "none"} />
