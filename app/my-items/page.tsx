@@ -3,6 +3,7 @@
 import Header from "@/app/components/header"
 import Footer from "@/app/components/footer"
 import ItemCard from "@/app/components/item-card"
+import AddItemModal from "@/app/components/add-item-modal"
 import { Plus, Edit, Trash2, Eye, Loader2 } from "lucide-react"
 import { useState, useMemo, useEffect } from "react"
 import Link from "next/link"
@@ -28,6 +29,7 @@ interface TransformedItem {
 export default function MyItemsPage() {
   const router = useRouter()
   const [activeTab, setActiveTab] = useState<"all" | "available" | "borrowed">("all")
+  const [isAddItemModalOpen, setIsAddItemModalOpen] = useState(false)
 
   // Fetch user profile to get user ID
   const { data: profile, isLoading: profileLoading, error: profileError } = useProfile()
@@ -222,13 +224,13 @@ export default function MyItemsPage() {
               <h1 className="text-4xl font-bold text-foreground mb-2">My Items</h1>
               <p className="text-muted-foreground">Manage items you're willing to lend</p>
             </div>
-            <Link
-              href="#"
+            <button
+              onClick={() => setIsAddItemModalOpen(true)}
               className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-primary to-accent text-primary-foreground rounded-lg hover-lift font-semibold"
             >
               <Plus className="w-5 h-5" />
               Add New Item
-            </Link>
+            </button>
           </div>
 
           {/* Stats */}
@@ -312,18 +314,19 @@ export default function MyItemsPage() {
               <div className="text-6xl mb-4">📦</div>
               <h3 className="text-2xl font-bold text-foreground mb-2">No items yet</h3>
               <p className="text-muted-foreground mb-6">Start sharing with your community by adding your first item</p>
-              <Link
-                href="#"
+              <button
+                onClick={() => setIsAddItemModalOpen(true)}
                 className="inline-flex items-center gap-2 px-6 py-3 bg-primary text-primary-foreground rounded-lg hover-lift font-semibold"
               >
                 <Plus className="w-5 h-5" />
                 Add Item
-              </Link>
+              </button>
             </div>
           )}
         </div>
       </main>
       <Footer />
+      <AddItemModal isOpen={isAddItemModalOpen} onClose={() => setIsAddItemModalOpen(false)} />
     </>
   )
 }
