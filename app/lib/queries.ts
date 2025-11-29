@@ -181,7 +181,8 @@ export const useCreateItem = () => {
   return useMutation({
     mutationFn: (data: FormData) => itemsAPI.createItem(data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.items.all() })
+      // Invalidate all item queries (with or without params)
+      queryClient.invalidateQueries({ queryKey: ["items"] })
     },
   })
 }

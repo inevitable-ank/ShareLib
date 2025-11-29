@@ -45,6 +45,9 @@ export default function AddItemModal({ isOpen, onClose }: AddItemModalProps) {
 
   // Get categories list
   const categories = Array.isArray(categoriesData) ? categoriesData : []
+  
+  // Check if categories failed to load
+  const hasCategories = categories.length > 0
 
   if (!isOpen) return null
 
@@ -106,12 +109,18 @@ export default function AddItemModal({ isOpen, onClose }: AddItemModalProps) {
     createItemMutation.mutate(formData)
   }
 
-  const error =
-    !title || !description || !category || !location || images.length === 0
-      ? "Please fill in all required fields and add at least one image"
-      : createItemMutation.error instanceof Error
-        ? createItemMutation.error.message
-        : null
+  // More specific error messages
+  const getValidationError = () => {
+    if (!title) return "Title is required"
+    if (!description) return "Description is required"
+    if (!category) return "Please select a category"
+    if (!location) return "Location is required"
+    if (images.length === 0) return "Please add at least one image"
+    return null
+  }
+
+  const validationError = getValidationError()
+  const error = validationError || (createItemMutation.error instanceof Error ? createItemMutation.error.message : null)
   const isSubmitting = createItemMutation.isPending
 
   return (
@@ -174,6 +183,10 @@ export default function AddItemModal({ isOpen, onClose }: AddItemModalProps) {
                 <div className="flex items-center justify-center py-2">
                   <Loader2 className="w-4 h-4 animate-spin text-primary" />
                 </div>
+              ) : !hasCategories ? (
+                <div className="p-3 bg-destructive/10 border border-destructive/20 rounded-lg text-sm text-destructive">
+                  Failed to load categories. Please refresh the page.
+                </div>
               ) : (
                 <select
                   value={category}
@@ -183,7 +196,7 @@ export default function AddItemModal({ isOpen, onClose }: AddItemModalProps) {
                 >
                   <option value="">Select category</option>
                   {categories.map((cat: any) => (
-                    <option key={cat.id} value={cat.id}>
+                    <option key={cat.id} value={String(cat.id)}>
                       {cat.name}
                     </option>
                   ))}
@@ -341,8 +354,9 @@ export default function AddItemModal({ isOpen, onClose }: AddItemModalProps) {
             </button>
             <button
               type="submit"
-              disabled={isSubmitting || !title || !description || !category || !location || images.length === 0}
-              className="flex-1 py-2 bg-gradient-to-r from-primary to-accent text-primary-foreground rounded-lg hover-lift disabled:opacity-50 font-medium"
+              disabled={isSubmitting || !!validationError}
+              className="flex-1 py-2 bg-gradient-to-r from-primary to-accent text-primary-foreground rounded-lg hover-lift disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+              title={validationError || undefined}
             >
               {isSubmitting ? "Adding..." : "Add Item"}
             </button>

@@ -9,6 +9,8 @@ import { useState, useMemo, useEffect } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useProfile, useItems, useBorrowRequests, useBorrowRecords } from "@/app/lib/queries"
+import { useQueryClient } from "@tanstack/react-query"
+import { queryKeys } from "@/app/lib/queries"
 
 interface TransformedItem {
   id: string
@@ -28,6 +30,7 @@ interface TransformedItem {
 
 export default function MyItemsPage() {
   const router = useRouter()
+  const queryClient = useQueryClient()
   const [activeTab, setActiveTab] = useState<"all" | "available" | "borrowed">("all")
   const [isAddItemModalOpen, setIsAddItemModalOpen] = useState(false)
 
@@ -50,9 +53,22 @@ export default function MyItemsPage() {
   const profileId = profile && typeof profile === 'object' ? (profile as any).id : undefined
 
   // Fetch items owned by the user
-  const { data: itemsData, isLoading: itemsLoading } = useItems(
+  const { data: itemsData, isLoading: itemsLoading, refetch: refetchItems } = useItems(
     profileId ? { owner: profileId } : undefined
   )
+
+  // Refetch items when modal closes (in case item was added)
+  useEffect(() => {
+    if (!isAddItemModalOpen && profileId) {
+      // Small delay to ensure backend has processed the item
+      const timer = setTimeout(() => {
+        refetchItems()
+        // Also invalidate the query cache to be sure
+        queryClient.invalidateQueries({ queryKey: ["items"] })
+      }, 500)
+      return () => clearTimeout(timer)
+    }
+  }, [isAddItemModalOpen, profileId, refetchItems, queryClient])
 
   // Fetch borrow requests to count pending requests per item (only for items I own)
   const { data: borrowRequestsData } = useBorrowRequests({ lender: 'me' })
