@@ -17,6 +17,7 @@ interface Item {
   condition: string
   photos: string | string[]
   status: string
+  location?: string
   owner: { id: number; username: string; email: string; first_name?: string; last_name?: string; avatar?: string; location?: string; lender_rating?: string; borrower_rating?: string }
   created_at: string
   updated_at: string
@@ -238,7 +239,7 @@ export default function ItemDetailPage({ params }: { params: Promise<{ id: strin
                       <p className="text-xs text-muted-foreground uppercase font-semibold mb-1">Location</p>
                       <p className="font-semibold text-foreground flex items-center gap-1">
                         <MapPin className="w-4 h-4" />
-                        {ownerData?.location || "Not specified"}
+                        {itemData?.location || "Not specified"}
                       </p>
                     </div>
                   </div>
